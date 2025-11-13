@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/auth_form_field.dart';
 import 'register_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../chat/screens/chat_screen.dart';
+import '../../home/screens/home_screen.dart';
 class LoginScreen extends StatefulWidget
 {
   const LoginScreen({Key ? key}) : super(key: key);
@@ -33,7 +33,7 @@ class _LoginScreenState extends State<LoginScreen>
       );
       if(context.mounted){
         Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (context) => const ChatScreen(),
+          builder: (context) => const HomeScreen(),
         ));
       }
     } on FirebaseAuthException catch(e){

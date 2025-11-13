@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/auth_form_field.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../chat/screens/chat_screen.dart';
-
+import '../../home/screens/home_screen.dart';
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
 
@@ -38,12 +37,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       if(userCredential.user != null){
         String uid =userCredential.user!.uid;
-        String email= userCredential.user!.uid;
+        String email= userCredential.user!.email!;
         // luu ho so nguoi dung vao CLOUD FIRESTORE
         await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'uid': uid,
           'email': email,
           'displayName': email.split('@')[0], // Tạm lấy tên là phần trước @
+          'phoneNumber':'',
+          'friend' :[],
           'photoUrl': '', // Sẽ cập nhật sau
           'bio': 'Xin chào, tôi là người mới!', // Tiểu sử mặc định
           'createdAt': Timestamp.now(),
@@ -51,7 +52,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         //chuyen den man hinh chat
         if(context.mounted){
           Navigator.of(context).pushReplacement(MaterialPageRoute(
-            builder:(context)=> const ChatScreen(),
+            builder:(context)=> const HomeScreen(),
           ));
         }
       }

@@ -1,97 +1,160 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../../core/models/message_model.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({Key? key}) : super(key: key);
+  final String receiverUid;
+  final String receiverName;
+
+  const ChatScreen({
+    Key? key,
+    required this.receiverUid,
+    required this.receiverName,
+  }) : super(key: key);
 
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  // ID giả lập cho 2 người dùng
-  final String _myId = 'user1';
-  final String _otherUserId = 'user2';
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Danh sách tin nhắn giả lập (MOCK DATA)
-  final List<Message> _mockMessages = [
-    Message(
-        id: '1',
-        text: 'Chào bạn, bạn khoẻ không?',
-        senderId: 'user2',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 5))),
-    Message(
-        id: '2',
-        text: 'Tôi khoẻ, cảm ơn bạn. Còn bạn?',
-        senderId: 'user1',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 4))),
-    Message(
-        id: '3',
-        text: 'Tôi cũng khoẻ. Đang làm gì đó?',
-        senderId: 'user2',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 2))),
-  ];
+  late String _currentUserUid; // ID của người dùng hiện tại
+  late String _chatRoomId; // ID của phòng chat
 
   final ScrollController _scrollController = ScrollController();
 
-  // Hàm này xử lý việc gửi tin nhắn (thêm vào list)
-  void _sendMessage(String text) {
-    final newMessage = Message(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: text,
-      senderId: _myId, // Giả lập là tôi gửi
-      timestamp: DateTime.now(),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _currentUserUid = _auth.currentUser!.uid;
+    _chatRoomId = _getChatRoomId(_currentUserUid, widget.receiverUid);
+  }
 
-    setState(() {
-      _mockMessages.add(newMessage);
-    });
+  String _getChatRoomId(String uid1, String uid2) {
+    if (uid1.hashCode <= uid2.hashCode) {
+      return '${uid1}_${uid2}';
+    } else {
+      return '${uid2}_${uid1}';
+    }
+  }
 
-    // Tự động cuộn xuống tin nhắn mới nhất
-    Future.delayed(const Duration(milliseconds: 100), () {
+  void _sendMessage(String text) async {
+    if (text.trim().isEmpty) {
+      return;
+    }
+
+    final Timestamp timestamp = Timestamp.now();
+
+    Map<String, dynamic> messageData = {
+      'text': text.trim(),
+      'senderUid': _currentUserUid,
+      'receiverUid': widget.receiverUid,
+      'timestamp': timestamp,
+    };
+
+    try {
+      await _firestore
+          .collection('chat_rooms')
+          .doc(_chatRoomId)
+          .collection('messages')
+          .add(messageData);
+
+      await _firestore.collection('chat_rooms').doc(_chatRoomId).set(
+        {
+          'users': [_currentUserUid, widget.receiverUid],
+          'lastMessage': text.trim(),
+          'lastTimestamp': timestamp,
+        },
+        SetOptions(merge: true), // 'merge: true' sẽ tạo mới nếu chưa có, hoặc cập nhật nếu đã có
+      );
+
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+        0, // Cuộn lên đầu (vì danh sách bị đảo ngược)
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
-    });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi gửi tin nhắn: ${e.toString()}'), backgroundColor: Colors.red),
+      );
+    }
   }
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tên Người Nhận'),
+        title: Text(widget.receiverName),
         backgroundColor: Colors.teal[700],
         foregroundColor: Colors.white,
       ),
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
-            image: NetworkImage(
-                'https://placehold.co/600x1200/e8e0d4/e8e0d4?text=Chat+Background'),
+            image: NetworkImage('https://placehold.co/600x1200/e8e0d4/e8e0d4?text=Chat+Background'),
             fit: BoxFit.cover,
             opacity: 0.5,
           ),
         ),
         child: Column(
           children: [
-            // Khu vực hiển thị tin nhắn
             Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(10.0),
-                itemCount: _mockMessages.length,
-                itemBuilder: (context, index) {
-                  final message = _mockMessages[index];
-                  final isMe = message.senderId == _myId;
-                  return ChatBubble(message: message, isMe: isMe);
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('chat_rooms')
+                    .doc(_chatRoomId)
+                    .collection('messages')
+                    .orderBy('timestamp', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: Colors.teal));
+                  }
+                  // Lỗi
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Đã xảy ra lỗi.', style: TextStyle(color: Colors.red)));
+                  }
+                  // Không có tin nhắn
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(child: Text('Hãy gửi tin nhắn đầu tiên!'));
+                  }
+
+                  // Lấy danh sách tin nhắn thật
+                  final messagesDocs = snapshot.data!.docs;
+
+                  return ListView.builder(
+                    controller: _scrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.all(10.0),
+                    itemCount: messagesDocs.length,
+                    itemBuilder: (context, index) {
+                      final doc = messagesDocs[index];
+                      final messageData = doc.data() as Map<String, dynamic>;
+
+                      // Chuyển đổi dữ liệu Firestore (Map) thành đối tượng Message
+                      final message = Message(
+                        id: doc.id,
+                        text: messageData['text'] ?? '',
+                        senderId: messageData['senderUid'] ?? '',
+                        // Chuyển đổi Timestamp của Firestore thành DateTime
+                        timestamp: (messageData['timestamp'] as Timestamp).toDate(),
+                      );
+
+                      final isMe = message.senderId == _currentUserUid;
+
+                      return ChatBubble(message: message, isMe: isMe);
+                    },
+                  );
                 },
               ),
             ),
-            // Khu vực nhập liệu
             MessageInput(onSendPressed: _sendMessage),
           ],
         ),
