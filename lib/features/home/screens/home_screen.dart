@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 import 'chat_list_screen.dart';
 import 'settings_screen.dart';
-class HomeScreen extends StatefulWidget{
-  const HomeScreen({Key ? key}) : super(key: key);
+import '../../profile/screens/profile_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({Key? key}) : super(key: key);
+
   @override
   _HomeScreenState createState() => _HomeScreenState();
-
 }
 
-class _HomeScreenState extends State<HomeScreen>{
-  int _selectedIndex =0;
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+
   static const List<Widget> _widgetOptions = <Widget>[
     ChatListScreen(),
+    ProfileScreen(),
     SettingsScreen(),
   ];
-  void _onItemTapped(int index){
+
+  void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
@@ -33,13 +38,17 @@ class _HomeScreenState extends State<HomeScreen>{
             label: 'Chat',
           ),
           BottomNavigationBarItem(
+            icon: Icon(Icons.person_rounded),
+            label: 'Hồ sơ',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(Icons.settings),
-            label: 'Setting',
+            label: 'Cài đặt',
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.teal[800], // mau tab active
-        unselectedItemColor: Colors.grey[600], // mau tab un active
+        selectedItemColor: Colors.teal[800],
+        unselectedItemColor: Colors.grey[600],
         onTap: _onItemTapped,
       ),
     );

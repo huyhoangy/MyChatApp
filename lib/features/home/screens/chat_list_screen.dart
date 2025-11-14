@@ -177,13 +177,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   leading: CircleAvatar(
                     radius: 28,
                     backgroundColor: Colors.teal[100],
-                    child: Text(
-                      placeholderInitial,style:  TextStyle(color: Colors.teal[800],fontSize: 24,fontWeight: FontWeight.bold),
-                    ),
-                    // TODO: Thay bằng ảnh thật (nếu có)
-                    // backgroundImage: (userData['photoUrl'] != null && userData['photoUrl'].isNotEmpty)
-                    //    ? NetworkImage(userData['photoUrl'])
-                    //    : null,
+                    backgroundImage: (userData['photoUrl'] != null && userData['photoUrl'].isNotEmpty)
+                    ?NetworkImage(userData['photoUrl']!):null,
+                    child: (userData['photoUrl']==null || userData['photoUrl'].isEmpty)
+                    ?Text(
+                      placeholderInitial,
+                      style: TextStyle(color: Colors.teal[800],fontSize: 24,fontWeight: FontWeight.bold),
+                    ): null
                   ),
                   title: Text(name,style: const TextStyle(fontWeight: FontWeight.bold),),
                   subtitle: Text(lastMessage,maxLines: 1,overflow: TextOverflow.ellipsis),
