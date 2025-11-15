@@ -85,6 +85,44 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
+  Future<void> _recallMessage(String messageId) async{
+    try{
+      await _firestore.collection('chat_rooms')
+          .doc(_chatRoomId).collection('messages').doc(messageId).update({
+        'text':'Tin nhắn đã được thu hồi',
+        'isRecalled':true,
+      });
+      // (Tùy chọn) Cập nhật luôn lastMessage của phòng chat
+      // nếu tin nhắn bị thu hồi là tin nhắn cuối cùng
+      // (Phần này nâng cao, có thể bỏ qua)
+    } catch(e){
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi thu hồi tin nhắn: ${e.toString()}'),backgroundColor: Colors.red,),
+      );
+    }
+  }
+  void _showRecallDialog(String messageId){
+    showDialog(
+      context: context,
+      builder: (ctx)=>AlertDialog(
+        title: const Text('Thu hồi tin nhắn'),
+        content: const Text('Bạn có chắc chắn muốn thu hồi tin nhắn này?'),
+        actions: [
+          TextButton(
+            onPressed: () =>Navigator.of(ctx).pop(), // nut huy
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _recallMessage(messageId);
+            },
+            child: const Text('Thu hồi',style: TextStyle(color:Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 
 
   @override
@@ -128,6 +166,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   // Lấy danh sách tin nhắn thật
                   final messagesDocs = snapshot.data!.docs;
+                  // Chuyển đổi dữ liệu Firestore (Map) thành đối tượng Message
 
                   return ListView.builder(
                     controller: _scrollController,
@@ -137,19 +176,28 @@ class _ChatScreenState extends State<ChatScreen> {
                     itemBuilder: (context, index) {
                       final doc = messagesDocs[index];
                       final messageData = doc.data() as Map<String, dynamic>;
-
-                      // Chuyển đổi dữ liệu Firestore (Map) thành đối tượng Message
-                      final message = Message(
+                      final message =Message(
                         id: doc.id,
                         text: messageData['text'] ?? '',
                         senderId: messageData['senderUid'] ?? '',
-                        // Chuyển đổi Timestamp của Firestore thành DateTime
                         timestamp: (messageData['timestamp'] as Timestamp).toDate(),
+                        isRecalled: messageData['isRecalled'] ?? false,
                       );
 
-                      final isMe = message.senderId == _currentUserUid;
 
-                      return ChatBubble(message: message, isMe: isMe);
+                      final isMe = message.senderId == _currentUserUid;
+                      return GestureDetector(
+                        onLongPress: () {
+                          // chi cho phep thu hoi tin nhan cua minh
+                          if(isMe && !message.isRecalled){
+                            _showRecallDialog(message.id);
+
+                          }
+                        },
+                        child: ChatBubble(message: message,isMe: isMe),
+                      );
+
+                      // return ChatBubble(message: message, isMe: isMe);
                     },
                   );
                 },

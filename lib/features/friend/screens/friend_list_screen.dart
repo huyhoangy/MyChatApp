@@ -94,10 +94,13 @@ class _FriendListScreenState extends State<FriendListScreen>{
                     leading: CircleAvatar(
                       radius: 25,
                       backgroundColor: Colors.teal[100],
-                      child: Text(
+                      backgroundImage: (friendData['photoUrl'] !=null && friendData['photoUrl'].isNotEmpty)
+                      ?NetworkImage(friendData['photoUrl']!):null,
+                      child: (friendData['photoUrl'] == null || friendData['photoUrl'].isEmpty)
+                      ?Text(
                         friendData['displayName']?[0]??'?',
                         style: TextStyle(color: Colors.teal[800]),
-                      ),
+                      ):null,
                     ),
                     title: Text(friendData['displayName'] ?? ' Nguoi dung'),
                     subtitle: Text(friendData['phoneNumber'] ??'Chua co SDT'),

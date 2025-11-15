@@ -3,10 +3,13 @@ class Message {
   final String text;
   final String senderId;
   final DateTime timestamp;
+  final bool isRecalled;
 
   Message({required this.id,
     required this.text,
     required this.senderId,
-    required this.timestamp});
+    required this.timestamp,
+    this.isRecalled = false
+  });
 
 }

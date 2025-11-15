@@ -99,6 +99,32 @@ class _ChatListScreenState extends State<ChatListScreen> {
       );
     }
   }
+  Future<void> _deleteChat(String chatRoomId) async{
+    try{
+      QuerySnapshot messagesSnapshot = await _firestore
+          .collection('chat_rooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .get();
+      WriteBatch batch =_firestore.batch();
+      for(DocumentSnapshot doc in messagesSnapshot.docs){
+        batch.delete(doc.reference);
+      }
+      batch.delete(_firestore.collection('chat_rooms').doc(chatRoomId));
+      await batch.commit();
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã xóa đoạn chat'),backgroundColor: Colors.green),
+        );
+      }
+    } catch(e){
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi xóa: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -150,12 +176,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
           itemCount:chatRooms.length,
           itemBuilder: (context,index){
             var roomData = chatRooms[index].data() as Map<String,dynamic>;
+            String chatRoomId =chatRooms[index].id;
             List <dynamic> users = roomData['users'];
             String otherUserUid = users.firstWhere((uid)=>uid != _currentUserUid);
             String lastMessage =roomData['lastMessage']??'';
             Timestamp lastTimestamp = roomData['lastTimestamp'] ?? Timestamp.now();
             String time = _formatTimestamp(lastTimestamp);
-            return FutureBuilder<DocumentSnapshot>(
+            return Dismissible(
+              key: Key(chatRoomId),
+              direction: DismissDirection.endToStart,
+              onDismissed: (direction){
+                _deleteChat(chatRoomId);
+              },
+              background: Container(
+                color:Colors.red[600],
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: const Icon(Icons.delete_sweep_rounded,color: Colors.white),
+              ),
+              child: FutureBuilder<DocumentSnapshot>(
               future: _firestore.collection('users').doc(otherUserUid).get(),
               builder: (context,userSnapshot){
                 if(!userSnapshot.hasData){
@@ -194,12 +233,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         receiverUid: otherUserUid,
                         receiverName: name,
                       ),
-                    ));
+                    ),);
                   },
                 );
                 },
+              ),
             );
-
           },
         );
       },

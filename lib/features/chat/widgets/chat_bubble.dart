@@ -34,10 +34,12 @@ class ChatBubble extends StatelessWidget{
             crossAxisAlignment: isMe ? CrossAxisAlignment.end
                 : CrossAxisAlignment.start,
             children: [
-              Text(message.text,
-                style: const TextStyle(
+              Text(
+                message.isRecalled?'Tin nhắn đã được thu hồi': message.text,
+                style:TextStyle(
                   fontSize: 16.0,
                   color: Colors.black87,
+                  fontStyle: message.isRecalled?FontStyle.italic:FontStyle.normal,
                 ),
               ),
                 const SizedBox(height: 4.0),
