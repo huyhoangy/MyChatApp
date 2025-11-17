@@ -9,11 +9,13 @@ import '../widgets/message_input.dart';
 class ChatScreen extends StatefulWidget {
   final String receiverUid;
   final String receiverName;
+  final bool isGroup;
 
   const ChatScreen({
     Key? key,
     required this.receiverUid,
     required this.receiverName,
+    this.isGroup = false, // Mặc định là false (chat 1-1)
   }) : super(key: key);
 
   @override
@@ -24,16 +26,20 @@ class _ChatScreenState extends State<ChatScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  late String _currentUserUid; // ID của người dùng hiện tại
-  late String _chatRoomId; // ID của phòng chat
-
+  late String _currentUserUid;
+  late String _chatRoomId;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _currentUserUid = _auth.currentUser!.uid;
-    _chatRoomId = _getChatRoomId(_currentUserUid, widget.receiverUid);
+
+    if (widget.isGroup) {
+      _chatRoomId = widget.receiverUid;
+    } else {
+      _chatRoomId = _getChatRoomId(_currentUserUid, widget.receiverUid);
+    }
   }
 
   String _getChatRoomId(String uid1, String uid2) {
@@ -56,6 +62,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'senderUid': _currentUserUid,
       'receiverUid': widget.receiverUid,
       'timestamp': timestamp,
+      'isRecalled': false,
     };
 
     try {
@@ -67,15 +74,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
       await _firestore.collection('chat_rooms').doc(_chatRoomId).set(
         {
-          'users': [_currentUserUid, widget.receiverUid],
           'lastMessage': text.trim(),
           'lastTimestamp': timestamp,
+          if (!widget.isGroup) 'users': [_currentUserUid, widget.receiverUid],
         },
-        SetOptions(merge: true), // 'merge: true' sẽ tạo mới nếu chưa có, hoặc cập nhật nếu đã có
+        SetOptions(merge: true),
       );
 
       _scrollController.animateTo(
-        0, // Cuộn lên đầu (vì danh sách bị đảo ngược)
+        0,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
@@ -85,31 +92,34 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
-  Future<void> _recallMessage(String messageId) async{
-    try{
-      await _firestore.collection('chat_rooms')
-          .doc(_chatRoomId).collection('messages').doc(messageId).update({
-        'text':'Tin nhắn đã được thu hồi',
-        'isRecalled':true,
+
+  Future<void> _recallMessage(String messageId) async {
+    try {
+      await _firestore
+          .collection('chat_rooms')
+          .doc(_chatRoomId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'text': 'Tin nhắn đã được thu hồi',
+        'isRecalled': true,
       });
-      // (Tùy chọn) Cập nhật luôn lastMessage của phòng chat
-      // nếu tin nhắn bị thu hồi là tin nhắn cuối cùng
-      // (Phần này nâng cao, có thể bỏ qua)
-    } catch(e){
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi thu hồi tin nhắn: ${e.toString()}'),backgroundColor: Colors.red,),
+        SnackBar(content: Text('Lỗi khi thu hồi: ${e.toString()}'), backgroundColor: Colors.red),
       );
     }
   }
-  void _showRecallDialog(String messageId){
+
+  void _showRecallDialog(String messageId) {
     showDialog(
       context: context,
-      builder: (ctx)=>AlertDialog(
-        title: const Text('Thu hồi tin nhắn'),
-        content: const Text('Bạn có chắc chắn muốn thu hồi tin nhắn này?'),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Thu hồi tin nhắn?'),
+        content: const Text('Tin nhắn này sẽ được thu hồi cho tất cả mọi người trong đoạn chat.'),
         actions: [
           TextButton(
-            onPressed: () =>Navigator.of(ctx).pop(), // nut huy
+            onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Hủy'),
           ),
           TextButton(
@@ -117,13 +127,12 @@ class _ChatScreenState extends State<ChatScreen> {
               Navigator.of(ctx).pop();
               _recallMessage(messageId);
             },
-            child: const Text('Thu hồi',style: TextStyle(color:Colors.red)),
+            child: const Text('Thu hồi', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -155,18 +164,14 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator(color: Colors.teal));
                   }
-                  // Lỗi
                   if (snapshot.hasError) {
                     return const Center(child: Text('Đã xảy ra lỗi.', style: TextStyle(color: Colors.red)));
                   }
-                  // Không có tin nhắn
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return const Center(child: Text('Hãy gửi tin nhắn đầu tiên!'));
                   }
 
-                  // Lấy danh sách tin nhắn thật
                   final messagesDocs = snapshot.data!.docs;
-                  // Chuyển đổi dữ liệu Firestore (Map) thành đối tượng Message
 
                   return ListView.builder(
                     controller: _scrollController,
@@ -176,7 +181,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     itemBuilder: (context, index) {
                       final doc = messagesDocs[index];
                       final messageData = doc.data() as Map<String, dynamic>;
-                      final message =Message(
+
+                      final message = Message(
                         id: doc.id,
                         text: messageData['text'] ?? '',
                         senderId: messageData['senderUid'] ?? '',
@@ -184,20 +190,16 @@ class _ChatScreenState extends State<ChatScreen> {
                         isRecalled: messageData['isRecalled'] ?? false,
                       );
 
-
                       final isMe = message.senderId == _currentUserUid;
+
                       return GestureDetector(
                         onLongPress: () {
-                          // chi cho phep thu hoi tin nhan cua minh
-                          if(isMe && !message.isRecalled){
+                          if (isMe && !message.isRecalled) {
                             _showRecallDialog(message.id);
-
                           }
                         },
-                        child: ChatBubble(message: message,isMe: isMe),
+                        child: ChatBubble(message: message, isMe: isMe),
                       );
-
-                      // return ChatBubble(message: message, isMe: isMe);
                     },
                   );
                 },
