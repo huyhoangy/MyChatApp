@@ -50,7 +50,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ---  Hàm Lưu Biệt Danh ---
   Future<void> _updateNickname(String targetUid, String newName) async {
     try {
       if (widget.isGroup && targetUid == _chatRoomId) {
@@ -75,7 +74,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ---  Hộp Thoại Nhập Tên Mới ---
   void _showEditNameDialog(String targetUid, String currentName, String label) {
     final TextEditingController _nicknameController = TextEditingController(text: currentName);
 
@@ -112,7 +110,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---  Hiển Thị Danh Sách Thành Viên (Bottom Sheet) ---
   void _showParticipantsList() {
     showModalBottomSheet(
       context: context,
@@ -207,8 +204,10 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+  void _sendMessage(String text, {String? imageUrl}) async {
+    if (text.trim().isEmpty && imageUrl == null) {
+      return;
+    }
     final Timestamp timestamp = Timestamp.now();
 
     Map<String, dynamic> messageData = {
@@ -217,12 +216,17 @@ class _ChatScreenState extends State<ChatScreen> {
       'receiverUid': widget.receiverUid,
       'timestamp': timestamp,
       'isRecalled': false,
+      'imageUrl': imageUrl,
     };
 
     try {
       await _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').add(messageData);
+
+      String displayLastMessage = text.isNotEmpty ? text : (imageUrl != null ? 'Đã gửi ảnh' : '');
+      if (displayLastMessage.isEmpty) displayLastMessage = 'Tin nhắn mới';
+
       await _firestore.collection('chat_rooms').doc(_chatRoomId).set({
-        'lastMessage': text.trim(),
+        'lastMessage': displayLastMessage,
         'lastTimestamp': timestamp,
         if (!widget.isGroup) 'users': [_currentUserUid, widget.receiverUid],
       }, SetOptions(merge: true));
@@ -324,12 +328,12 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: StreamBuilder<DocumentSnapshot>(
                 stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
-                builder: (context,roomSnapshot){
-                  Map<String,dynamic> nicknames ={};
-                  if(roomSnapshot.hasData&& roomSnapshot.data!.exists){
-                    var data= roomSnapshot.data!.data() as Map<String,dynamic>;
-                    if(data.containsKey('nicknames')){
-                      nicknames=data['nicknames'] ;
+                builder: (context, roomSnapshot) {
+                  Map<String, dynamic> nicknames = {};
+                  if (roomSnapshot.hasData && roomSnapshot.data!.exists) {
+                    var data = roomSnapshot.data!.data() as Map<String, dynamic>;
+                    if (data.containsKey('nicknames')) {
+                      nicknames = data['nicknames'];
                     }
                   }
                   return StreamBuilder<QuerySnapshot>(
@@ -347,26 +351,24 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemCount: messagesDocs.length,
                         itemBuilder: (context, index) {
                           final doc = messagesDocs[index];
-                          final messageData = doc.data() as Map<String, dynamic>;
-                          final message = Message(
-                            id: doc.id,
-                            text: messageData['text'] ?? '',
-                            senderId: messageData['senderUid'] ?? '',
-                            timestamp: (messageData['timestamp'] as Timestamp).toDate(),
-                            isRecalled: messageData['isRecalled'] ?? false,
-                          );
+
+                          final message = Message.fromFirestore(doc);
+
                           final isMe = message.senderId == _currentUserUid;
-                          String ? senderNickname;
-                          if(nicknames.containsKey(message.senderId)){
-                            senderNickname=nicknames[message.senderId];
+                          String? senderNickname;
+                          if (nicknames.containsKey(message.senderId)) {
+                            senderNickname = nicknames[message.senderId];
                           }
+
                           return GestureDetector(
                             onLongPress: () {
                               if (isMe && !message.isRecalled) {
                                 _showRecallDialog(message.id);
                               }
                             },
-                            child: ChatBubble(message: message, isMe: isMe,
+                            child: ChatBubble(
+                              message: message,
+                              isMe: isMe,
                               nickname: senderNickname,
                             ),
                           );
@@ -377,7 +379,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
             ),
-            MessageInput(onSendPressed: _sendMessage),
+            MessageInput(
+                onSendPressed: (text, {imageUrl}) {
+                  _sendMessage(text, imageUrl: imageUrl);
+                }
+            ),
           ],
         ),
       ),
