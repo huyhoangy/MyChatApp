@@ -141,6 +141,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
             var roomData = chatRooms[index].data() as Map<String, dynamic>;
             String chatRoomId = chatRooms[index].id;
             bool isGroup = roomData['isGroup'] == true;
+            Map<String,dynamic> nicknames={};
+            if(roomData.containsKey('nicknames')){
+              nicknames =roomData['nicknames'];
+            }
             String lastMessage = roomData['lastMessage'] ?? '';
             Timestamp lastTimestamp = roomData['lastTimestamp'] ?? Timestamp.now();
             String time = _formatTimestamp(lastTimestamp);
@@ -181,6 +185,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
             else {
               List<dynamic> users = roomData['users'];
               String otherUserUid = users.firstWhere((uid) => uid != _currentUserUid, orElse: () => "");
+              String ?customNickname;
+              if(nicknames.containsKey(otherUserUid)){
+                customNickname=nicknames[otherUserUid];
+              }
 
               return Dismissible(
                 key: Key(chatRoomId),
@@ -193,9 +201,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     if (!userSnapshot.hasData) return ListTile(title: const Text('Đang tải...'), subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis));
                     var userData = userSnapshot.data!.data() as Map<String, dynamic>?;
                     if (userData == null) return const SizedBox.shrink();
+                    String originalName = userData['displayName'] ?? 'Người dùng';
 
                     String name = userData['displayName'] ?? 'Người dùng';
                     String placeholderInitial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                    String nameToShow =customNickname ?? originalName;
                     final bool matchesSearch = _searchQuery.isEmpty || name.toLowerCase().contains(_searchQuery.toLowerCase());
                     if (!matchesSearch) return const SizedBox.shrink();
 
@@ -207,14 +217,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         backgroundImage: (userData['photoUrl'] != null && userData['photoUrl'].isNotEmpty) ? NetworkImage(userData['photoUrl']) : null,
                         child: (userData['photoUrl'] == null || userData['photoUrl'].isEmpty) ? Text(placeholderInitial, style: TextStyle(color: Colors.teal[800], fontSize: 24, fontWeight: FontWeight.bold)) : null,
                       ),
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: Text(nameToShow, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
                       trailing: Text(time, style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(
                           builder: (context) => ChatScreen(
                             receiverUid: otherUserUid,
-                            receiverName: name,
+                            receiverName: originalName,
                             isGroup: false,
                           ),
                         ));

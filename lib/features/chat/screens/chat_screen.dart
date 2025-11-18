@@ -15,7 +15,7 @@ class ChatScreen extends StatefulWidget {
     Key? key,
     required this.receiverUid,
     required this.receiverName,
-    this.isGroup = false, // Mặc định là false (chat 1-1)
+    this.isGroup = false,
   }) : super(key: key);
 
   @override
@@ -50,11 +50,165 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _sendMessage(String text) async {
-    if (text.trim().isEmpty) {
-      return;
-    }
+  // ---  Hàm Lưu Biệt Danh ---
+  Future<void> _updateNickname(String targetUid, String newName) async {
+    try {
+      if (widget.isGroup && targetUid == _chatRoomId) {
+        await _firestore.collection('chat_rooms').doc(_chatRoomId).update({
+          'groupName': newName,
+        });
+      } else {
+        await _firestore.collection('chat_rooms').doc(_chatRoomId).set({
+          'nicknames': {
+            targetUid: newName
+          }
+        }, SetOptions(merge: true));
+      }
 
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã đặt tên thành công!'), backgroundColor: Colors.green),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi: ${e.toString()}'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // ---  Hộp Thoại Nhập Tên Mới ---
+  void _showEditNameDialog(String targetUid, String currentName, String label) {
+    final TextEditingController _nicknameController = TextEditingController(text: currentName);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(label),
+        content: TextField(
+          controller: _nicknameController,
+          decoration: const InputDecoration(
+            labelText: 'Tên mới',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (_nicknameController.text.trim().isNotEmpty) {
+                _updateNickname(targetUid, _nicknameController.text.trim());
+                Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+            child: const Text('Lưu', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---  Hiển Thị Danh Sách Thành Viên (Bottom Sheet) ---
+  void _showParticipantsList() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StreamBuilder<DocumentSnapshot>(
+          stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
+            var chatData = snapshot.data!.data() as Map<String, dynamic>;
+            List<dynamic> userIds = chatData['users'] ?? [];
+            Map<String, dynamic> nicknames = chatData['nicknames'] ?? {};
+            String groupName = chatData['groupName'] ?? 'Nhóm';
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    widget.isGroup ? 'Thông tin nhóm' : 'Đặt biệt danh',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Divider(height: 1),
+
+                if (widget.isGroup)
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.teal[100],
+                      child: const Icon(Icons.groups, color: Colors.teal),
+                    ),
+                    title: Text(groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text("Tên nhóm"),
+                    trailing: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                    onTap: () {
+                      _showEditNameDialog(_chatRoomId, groupName, 'Đổi tên nhóm');
+                    },
+                  ),
+                if (widget.isGroup) const Divider(height: 1),
+
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: userIds.length,
+                    itemBuilder: (context, index) {
+                      String uid = userIds[index];
+
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: _firestore.collection('users').doc(uid).get(),
+                        builder: (context, userSnapshot) {
+                          if (!userSnapshot.hasData) {
+                            return const ListTile(title: Text('Đang tải...'));
+                          }
+
+                          var userData = userSnapshot.data!.data() as Map<String, dynamic>;
+                          String originalName = userData['displayName'] ?? 'Người dùng';
+                          String photoUrl = userData['photoUrl'] ?? '';
+
+                          String displayName = nicknames.containsKey(uid) ? nicknames[uid] : originalName;
+                          String subtitle = (displayName != originalName) ? "Tên gốc: $originalName" : 'Chưa có biệt danh';
+                          bool isMe = uid == _currentUserUid;
+
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage: (photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+                              backgroundColor: Colors.teal[100],
+                              child: (photoUrl.isEmpty) ? Text(originalName.isNotEmpty ? originalName[0].toUpperCase() : '?') : null,
+                            ),
+                            title: Text(
+                              isMe ? '$displayName (Bạn)' : displayName,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(subtitle),
+                            trailing: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                            onTap: () {
+                              _showEditNameDialog(uid, displayName, 'Đặt biệt danh');
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
     final Timestamp timestamp = Timestamp.now();
 
     Map<String, dynamic> messageData = {
@@ -66,48 +220,26 @@ class _ChatScreenState extends State<ChatScreen> {
     };
 
     try {
-      await _firestore
-          .collection('chat_rooms')
-          .doc(_chatRoomId)
-          .collection('messages')
-          .add(messageData);
-
-      await _firestore.collection('chat_rooms').doc(_chatRoomId).set(
-        {
-          'lastMessage': text.trim(),
-          'lastTimestamp': timestamp,
-          if (!widget.isGroup) 'users': [_currentUserUid, widget.receiverUid],
-        },
-        SetOptions(merge: true),
-      );
-
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      await _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').add(messageData);
+      await _firestore.collection('chat_rooms').doc(_chatRoomId).set({
+        'lastMessage': text.trim(),
+        'lastTimestamp': timestamp,
+        if (!widget.isGroup) 'users': [_currentUserUid, widget.receiverUid],
+      }, SetOptions(merge: true));
+      _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi gửi tin nhắn: ${e.toString()}'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: ${e.toString()}'), backgroundColor: Colors.red));
     }
   }
 
   Future<void> _recallMessage(String messageId) async {
     try {
-      await _firestore
-          .collection('chat_rooms')
-          .doc(_chatRoomId)
-          .collection('messages')
-          .doc(messageId)
-          .update({
+      await _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').doc(messageId).update({
         'text': 'Tin nhắn đã được thu hồi',
         'isRecalled': true,
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi khi thu hồi: ${e.toString()}'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: ${e.toString()}'), backgroundColor: Colors.red));
     }
   }
 
@@ -116,19 +248,10 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Thu hồi tin nhắn?'),
-        content: const Text('Tin nhắn này sẽ được thu hồi cho tất cả mọi người trong đoạn chat.'),
+        content: const Text('Tin nhắn này sẽ được thu hồi cho tất cả mọi người.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Hủy'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _recallMessage(messageId);
-            },
-            child: const Text('Thu hồi', style: TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Hủy')),
+          TextButton(onPressed: () { Navigator.of(ctx).pop(); _recallMessage(messageId); }, child: const Text('Thu hồi', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -138,10 +261,56 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.receiverName),
+        title: StreamBuilder<DocumentSnapshot>(
+          stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
+          builder: (context, snapshot) {
+            String displayName = widget.receiverName;
+
+            if (snapshot.hasData && snapshot.data!.exists) {
+              var data = snapshot.data!.data() as Map<String, dynamic>;
+
+              if (widget.isGroup) {
+                displayName = data['groupName'] ?? widget.receiverName;
+              } else {
+                if (data.containsKey('nicknames')) {
+                  var nicknames = data['nicknames'] as Map<String, dynamic>;
+                  if (nicknames.containsKey(widget.receiverUid)) {
+                    displayName = nicknames[widget.receiverUid];
+                  }
+                }
+              }
+            }
+            return Text(displayName);
+          },
+        ),
         backgroundColor: Colors.teal[700],
         foregroundColor: Colors.white,
+
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'nicknames') {
+                _showParticipantsList();
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                const PopupMenuItem<String>(
+                  value: 'nicknames',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit, color: Colors.teal, size: 20),
+                      SizedBox(width: 10),
+                      Text('Đặt biệt danh'),
+                    ],
+                  ),
+                ),
+              ];
+            },
+          ),
+        ],
       ),
+
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
@@ -153,52 +322,55 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('chat_rooms')
-                    .doc(_chatRoomId)
-                    .collection('messages')
-                    .orderBy('timestamp', descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: Colors.teal));
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
+                builder: (context,roomSnapshot){
+                  Map<String,dynamic> nicknames ={};
+                  if(roomSnapshot.hasData&& roomSnapshot.data!.exists){
+                    var data= roomSnapshot.data!.data() as Map<String,dynamic>;
+                    if(data.containsKey('nicknames')){
+                      nicknames=data['nicknames'] ;
+                    }
                   }
-                  if (snapshot.hasError) {
-                    return const Center(child: Text('Đã xảy ra lỗi.', style: TextStyle(color: Colors.red)));
-                  }
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(child: Text('Hãy gửi tin nhắn đầu tiên!'));
-                  }
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').orderBy('timestamp', descending: true).snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.teal));
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Center(child: Text('Hãy gửi tin nhắn đầu tiên!'));
 
-                  final messagesDocs = snapshot.data!.docs;
+                      final messagesDocs = snapshot.data!.docs;
 
-                  return ListView.builder(
-                    controller: _scrollController,
-                    reverse: true,
-                    padding: const EdgeInsets.all(10.0),
-                    itemCount: messagesDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = messagesDocs[index];
-                      final messageData = doc.data() as Map<String, dynamic>;
-
-                      final message = Message(
-                        id: doc.id,
-                        text: messageData['text'] ?? '',
-                        senderId: messageData['senderUid'] ?? '',
-                        timestamp: (messageData['timestamp'] as Timestamp).toDate(),
-                        isRecalled: messageData['isRecalled'] ?? false,
-                      );
-
-                      final isMe = message.senderId == _currentUserUid;
-
-                      return GestureDetector(
-                        onLongPress: () {
-                          if (isMe && !message.isRecalled) {
-                            _showRecallDialog(message.id);
+                      return ListView.builder(
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.all(10.0),
+                        itemCount: messagesDocs.length,
+                        itemBuilder: (context, index) {
+                          final doc = messagesDocs[index];
+                          final messageData = doc.data() as Map<String, dynamic>;
+                          final message = Message(
+                            id: doc.id,
+                            text: messageData['text'] ?? '',
+                            senderId: messageData['senderUid'] ?? '',
+                            timestamp: (messageData['timestamp'] as Timestamp).toDate(),
+                            isRecalled: messageData['isRecalled'] ?? false,
+                          );
+                          final isMe = message.senderId == _currentUserUid;
+                          String ? senderNickname;
+                          if(nicknames.containsKey(message.senderId)){
+                            senderNickname=nicknames[message.senderId];
                           }
+                          return GestureDetector(
+                            onLongPress: () {
+                              if (isMe && !message.isRecalled) {
+                                _showRecallDialog(message.id);
+                              }
+                            },
+                            child: ChatBubble(message: message, isMe: isMe,
+                              nickname: senderNickname,
+                            ),
+                          );
                         },
-                        child: ChatBubble(message: message, isMe: isMe),
                       );
                     },
                   );
