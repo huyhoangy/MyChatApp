@@ -43,6 +43,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         'lastTimestamp': FieldValue.serverTimestamp(),
         'isGroup': true,
         'groupAdmin': currentUserUid,
+        'deletedBy':[],
       });
 
       await groupChatDoc.collection('messages').add({

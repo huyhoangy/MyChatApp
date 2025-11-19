@@ -52,6 +52,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     DateTime now = DateTime.now();
     DateTime today = DateTime(now.year, now.month, now.day);
     DateTime yesterday = today.subtract(const Duration(days: 1));
+
     if (dt.isAfter(today)) return DateFormat('HH:mm').format(dt);
     if (dt.isAfter(yesterday)) return 'Hôm qua';
     return DateFormat('dd/MM/yyyy').format(dt);
@@ -59,14 +60,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _deleteChat(String chatRoomId) async {
     try {
-      QuerySnapshot messagesSnapshot = await _firestore.collection('chat_rooms').doc(chatRoomId).collection('messages').get();
-      WriteBatch batch = _firestore.batch();
-      for (DocumentSnapshot doc in messagesSnapshot.docs) { batch.delete(doc.reference); }
-      batch.delete(_firestore.collection('chat_rooms').doc(chatRoomId));
-      await batch.commit();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xóa cuộc trò chuyện'), backgroundColor: Colors.green));
+      await _firestore.collection('chat_rooms').doc(chatRoomId).update({
+        'deletedBy': FieldValue.arrayUnion([_currentUserUid]),
+        'historyClearedAt.$_currentUserUid': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã xóa cuộc trò chuyện'), backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi khi xóa: ${e.toString()}'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi xóa: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -140,16 +149,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
           itemBuilder: (context, index) {
             var roomData = chatRooms[index].data() as Map<String, dynamic>;
             String chatRoomId = chatRooms[index].id;
-            bool isGroup = roomData['isGroup'] == true;
-            Map<String,dynamic> nicknames={};
-            if(roomData.containsKey('nicknames')){
-              nicknames =roomData['nicknames'];
+
+            // --- 2. SỬA LỖI TẠI ĐÂY: Kiểm tra danh sách đã xóa ---
+            List<dynamic> deletedBy = [];
+            if (roomData.containsKey('deletedBy')) {
+              deletedBy = roomData['deletedBy'];
             }
+            // Nếu ID của mình nằm trong danh sách 'deletedBy', ẩn nó đi
+            if (deletedBy.contains(_currentUserUid)) {
+              return const SizedBox.shrink();
+            }
+            // --- KẾT THÚC SỬA LỖI ---
+
+            bool isGroup = roomData['isGroup'] == true;
             String lastMessage = roomData['lastMessage'] ?? '';
             Timestamp lastTimestamp = roomData['lastTimestamp'] ?? Timestamp.now();
             String time = _formatTimestamp(lastTimestamp);
 
-            // --- NHÓM CHAT ---
+            // --- PHẦN DƯỚI GIỮ NGUYÊN ---
             if (isGroup) {
               String groupName = roomData['groupName'] ?? 'Nhóm không tên';
               if (_isSearching && !groupName.toLowerCase().contains(_searchQuery.toLowerCase())) return const SizedBox.shrink();
@@ -180,14 +197,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   },
                 ),
               );
-            }
-            // --- CHAT CÁ NHÂN ---
-            else {
+            } else {
               List<dynamic> users = roomData['users'];
               String otherUserUid = users.firstWhere((uid) => uid != _currentUserUid, orElse: () => "");
-              String ?customNickname;
-              if(nicknames.containsKey(otherUserUid)){
-                customNickname=nicknames[otherUserUid];
+
+              // Lấy biệt danh (nếu có) để hiển thị ở danh sách
+              Map<String, dynamic> nicknames = {};
+              if (roomData.containsKey('nicknames')) {
+                nicknames = roomData['nicknames'];
+              }
+              String? customNickname;
+              if (nicknames.containsKey(otherUserUid)) {
+                customNickname = nicknames[otherUserUid];
               }
 
               return Dismissible(
@@ -198,15 +219,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 child: FutureBuilder<DocumentSnapshot>(
                   future: _firestore.collection('users').doc(otherUserUid).get(),
                   builder: (context, userSnapshot) {
-                    if (!userSnapshot.hasData) return ListTile(title: const Text('Đang tải...'), subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis));
+                    if (!userSnapshot.hasData) {
+                      // Hiển thị tạm nếu đang load user nhưng đã có biệt danh
+                      return ListTile(title: Text(customNickname ?? 'Đang tải...'), subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis));
+                    }
                     var userData = userSnapshot.data!.data() as Map<String, dynamic>?;
                     if (userData == null) return const SizedBox.shrink();
-                    String originalName = userData['displayName'] ?? 'Người dùng';
 
-                    String name = userData['displayName'] ?? 'Người dùng';
-                    String placeholderInitial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-                    String nameToShow =customNickname ?? originalName;
-                    final bool matchesSearch = _searchQuery.isEmpty || name.toLowerCase().contains(_searchQuery.toLowerCase());
+                    String originalName = userData['displayName'] ?? 'Người dùng';
+                    String nameToShow = customNickname ?? originalName; // Ưu tiên biệt danh
+
+                    String placeholderInitial = nameToShow.isNotEmpty ? nameToShow[0].toUpperCase() : '?';
+                    final bool matchesSearch = _searchQuery.isEmpty || nameToShow.toLowerCase().contains(_searchQuery.toLowerCase());
                     if (!matchesSearch) return const SizedBox.shrink();
 
                     return ListTile(

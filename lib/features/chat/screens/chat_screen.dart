@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/models/message_model.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
-
+import '../../group/screens/add_members_screen.dart';
 class ChatScreen extends StatefulWidget {
   final String receiverUid;
   final String receiverName;
@@ -228,6 +228,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _firestore.collection('chat_rooms').doc(_chatRoomId).set({
         'lastMessage': displayLastMessage,
         'lastTimestamp': timestamp,
+        'deletedBy':[],
         if (!widget.isGroup) 'users': [_currentUserUid, widget.receiverUid],
       }, SetOptions(merge: true));
       _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
@@ -269,9 +270,11 @@ class _ChatScreenState extends State<ChatScreen> {
           stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
           builder: (context, snapshot) {
             String displayName = widget.receiverName;
+            List<dynamic> currentMembers=[];
 
             if (snapshot.hasData && snapshot.data!.exists) {
               var data = snapshot.data!.data() as Map<String, dynamic>;
+              currentMembers = data['users'] ?? [];
 
               if (widget.isGroup) {
                 displayName = data['groupName'] ?? widget.receiverName;
@@ -291,25 +294,55 @@ class _ChatScreenState extends State<ChatScreen> {
         foregroundColor: Colors.white,
 
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'nicknames') {
-                _showParticipantsList();
+          StreamBuilder<DocumentSnapshot>(
+            stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
+            builder: (context,snapshot){
+              List<dynamic> currentMembers =[];
+              if(snapshot.hasData&& snapshot.data!.exists){
+                var data = snapshot.data!.data() as Map<String,dynamic>;
+                currentMembers = data ['users'] ??[];
               }
-            },
-            itemBuilder: (BuildContext context) {
-              return [
-                const PopupMenuItem<String>(
-                  value: 'nicknames',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit, color: Colors.teal, size: 20),
-                      SizedBox(width: 10),
-                      Text('Đặt biệt danh'),
-                    ],
-                  ),
-                ),
-              ];
+              return PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'nicknames') {
+                    _showParticipantsList();
+                  }
+                  else if( value== 'add_member'){
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder:(context)=>AddMembersScreen(
+                              chatRoomId: _chatRoomId,
+                              currentMembersUids: currentMembers),
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (BuildContext context) {
+                  return [
+                    if(widget.isGroup)
+                      const PopupMenuItem<String>(
+                        value: 'add_member',
+                        child: Row(
+                          children: [
+                            Icon(Icons.person_add, color: Colors.teal, size: 20),
+                            SizedBox(width: 10),
+                            Text('Thêm thành viên'),
+                          ],
+                        ),
+                      ),
+                    PopupMenuItem<String>(
+                      value: 'nicknames',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, color: Colors.teal, size: 20),
+                          SizedBox(width: 10),
+                          Text(widget.isGroup ? 'Đổi tên nhóm' : 'Đặt biệt danh'),                        ],
+                      ),
+                    ),
+                  ];
+                },
+              );
+
             },
           ),
         ],
@@ -329,18 +362,32 @@ class _ChatScreenState extends State<ChatScreen> {
               child: StreamBuilder<DocumentSnapshot>(
                 stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
                 builder: (context, roomSnapshot) {
+                  Timestamp clearHistoryTimestamp = Timestamp.fromMillisecondsSinceEpoch(0);
                   Map<String, dynamic> nicknames = {};
                   if (roomSnapshot.hasData && roomSnapshot.data!.exists) {
                     var data = roomSnapshot.data!.data() as Map<String, dynamic>;
                     if (data.containsKey('nicknames')) {
                       nicknames = data['nicknames'];
                     }
+                    if(data.containsKey('historyClearedAt')){
+                      var historyMap = data['historyClearedAt'] as Map<String, dynamic>;
+                      if(historyMap.containsKey(_currentUserUid)){
+                        clearHistoryTimestamp = historyMap[_currentUserUid] as Timestamp;
+                      }
+                    }
                   }
                   return StreamBuilder<QuerySnapshot>(
-                    stream: _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').orderBy('timestamp', descending: true).snapshots(),
+                    stream: _firestore.collection('chat_rooms')
+                        .doc(_chatRoomId)
+                        .collection('messages')
+                        .orderBy('timestamp', descending: true)
+                        .endBefore([clearHistoryTimestamp])
+                        .snapshots(),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.teal));
-                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Center(child: Text('Hãy gửi tin nhắn đầu tiên!'));
+                      if (snapshot.connectionState == ConnectionState.waiting)
+                        return const Center(child: CircularProgressIndicator(color: Colors.teal));
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
+                        return const Center(child: Text('Không có tin nhắn nào'));
 
                       final messagesDocs = snapshot.data!.docs;
 
