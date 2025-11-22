@@ -6,6 +6,9 @@ import '../../../core/models/message_model.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import '../../group/screens/add_members_screen.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:cloudinary_public/cloudinary_public.dart';
 class ChatScreen extends StatefulWidget {
   final String receiverUid;
   final String receiverName;
@@ -126,7 +129,9 @@ class _ChatScreenState extends State<ChatScreen> {
             List<dynamic> userIds = chatData['users'] ?? [];
             Map<String, dynamic> nicknames = chatData['nicknames'] ?? {};
             String groupName = chatData['groupName'] ?? 'Nhóm';
-
+            String ? groupIcon = chatData['groupIcon'];
+            String groupAdmin = chatData['groupAdmin'] ?? '';
+            bool iAmAdmin = (_currentUserUid ==groupAdmin);
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -143,14 +148,31 @@ class _ChatScreenState extends State<ChatScreen> {
                   ListTile(
                     leading: CircleAvatar(
                       backgroundColor: Colors.teal[100],
-                      child: const Icon(Icons.groups, color: Colors.teal),
+                      backgroundImage: (groupIcon != null&&groupIcon.isNotEmpty)?NetworkImage(groupIcon):null,
+                      child: (groupIcon == null || groupIcon.isEmpty)
+                          ? const Icon(Icons.groups, color: Colors.teal)
+                          : null,
                     ),
                     title: Text(groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: const Text("Tên nhóm"),
-                    trailing: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                    onTap: () {
-                      _showEditNameDialog(_chatRoomId, groupName, 'Đổi tên nhóm');
-                    },
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon:  const Icon(Icons.camera_alt,color: Colors.teal) ,
+                          onPressed: _changeGroupAvatar,
+                          tooltip: 'Đổi ảnh nhóm',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.teal),
+                          onPressed: (){
+                            _showEditNameDialog(_chatRoomId, groupName, 'Đổi tên nhóm');
+                          },
+                          tooltip: 'Đổi tên nhóm',
+                        ),
+                      ],
+                    ),
+
                   ),
                 if (widget.isGroup) const Divider(height: 1),
 
@@ -174,6 +196,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           String displayName = nicknames.containsKey(uid) ? nicknames[uid] : originalName;
                           String subtitle = (displayName != originalName) ? "Tên gốc: $originalName" : 'Chưa có biệt danh';
                           bool isMe = uid == _currentUserUid;
+                          if(uid==groupAdmin){
+                            subtitle = 'Quản trị viên';
+                          }
 
                           return ListTile(
                             leading: CircleAvatar(
@@ -185,8 +210,21 @@ class _ChatScreenState extends State<ChatScreen> {
                               isMe ? '$displayName (Bạn)' : displayName,
                               style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            subtitle: Text(subtitle),
-                            trailing: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                            subtitle: Text(subtitle, style: TextStyle(color: uid == groupAdmin ? Colors.teal : Colors.grey)),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                  onPressed: () => _showEditNameDialog(uid, displayName, 'Đặt biệt danh'),
+                                ),
+                                if(iAmAdmin && !isMe)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                                    onPressed: () => _removeMember(uid, displayName),
+                                  ),
+                              ],
+                            ),
                             onTap: () {
                               _showEditNameDialog(uid, displayName, 'Đặt biệt danh');
                             },
@@ -260,6 +298,70 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+  Future<void>_removeMember(String memberUid, String memberName) async{
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa thành viên?'),
+        content: Text('Bạn có chắc chắn muốn xóa $memberName khỏi nhóm?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Xóa', style: TextStyle(color: Colors.red))),
+
+        ],
+      ),
+    ) ?? false ;
+    if(!confirm) return ;
+      try{
+        await _firestore.collection('chat_rooms').doc(_chatRoomId).update({
+          'users':FieldValue.arrayRemove([memberUid]),
+        });
+        await _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').add({
+          'text': '$memberName đã bị xóa khỏi nhóm',
+          'senderUid': 'system',
+          'timestamp':FieldValue.serverTimestamp(),
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xóa thành viên.'), backgroundColor: Colors.green));
+      } catch(e){
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: ${e.toString()}'), backgroundColor: Colors.red));
+      }
+  }
+  Future<void>_changeGroupAvatar() async{
+    final ImagePicker picker =ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if(image == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Đang tải ảnh lên...'), backgroundColor: Colors.teal),
+    );
+    try{
+      final cloudinary =CloudinaryPublic(
+        'dtcxoncos','flutter_uploads_chatapp' ,cache: false
+      );
+      CloudinaryResponse response = await cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          image.path,
+          resourceType: CloudinaryResourceType.Image,
+          folder:'group_avatars_chatApp',
+        ),
+      );
+      String newGroupIconUrl = response.secureUrl;
+      await _firestore.collection('chat_rooms').doc(_chatRoomId).update({
+        'groupIcon':newGroupIconUrl,
+      });
+      await _firestore.collection('chat_rooms').doc(_chatRoomId).collection('messages').add({
+        'text': 'Đã thay đổi ảnh đại diện nhóm',
+        'senderUid': 'system',
+        'timestamp':FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thay đổi ảnh nhóm'),backgroundColor: Colors.green),
+      );
+    } catch(e){
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi: ${e.toString()}'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   @override

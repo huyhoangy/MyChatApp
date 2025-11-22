@@ -150,7 +150,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             var roomData = chatRooms[index].data() as Map<String, dynamic>;
             String chatRoomId = chatRooms[index].id;
 
-            // --- 2. SỬA LỖI TẠI ĐÂY: Kiểm tra danh sách đã xóa ---
             List<dynamic> deletedBy = [];
             if (roomData.containsKey('deletedBy')) {
               deletedBy = roomData['deletedBy'];
@@ -159,17 +158,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
             if (deletedBy.contains(_currentUserUid)) {
               return const SizedBox.shrink();
             }
-            // --- KẾT THÚC SỬA LỖI ---
 
             bool isGroup = roomData['isGroup'] == true;
             String lastMessage = roomData['lastMessage'] ?? '';
             Timestamp lastTimestamp = roomData['lastTimestamp'] ?? Timestamp.now();
             String time = _formatTimestamp(lastTimestamp);
+            String ? groupIcon = roomData['groupIcon'];
 
-            // --- PHẦN DƯỚI GIỮ NGUYÊN ---
             if (isGroup) {
               String groupName = roomData['groupName'] ?? 'Nhóm không tên';
-              if (_isSearching && !groupName.toLowerCase().contains(_searchQuery.toLowerCase())) return const SizedBox.shrink();
+              if (_isSearching && !groupName.toLowerCase().contains(_searchQuery.toLowerCase()))
+                return const SizedBox.shrink();
 
               return Dismissible(
                 key: Key(chatRoomId),
@@ -181,7 +180,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   leading: CircleAvatar(
                     radius: 28,
                     backgroundColor: Colors.teal[100],
-                    child: const Icon(Icons.groups_rounded, color: Colors.teal, size: 30),
+                    backgroundImage: (groupIcon != null && groupIcon.isNotEmpty)
+                        ? NetworkImage(groupIcon)
+                        : null,
+                    child: (groupIcon == null || groupIcon.isEmpty)
+                        ? const Icon(Icons.groups_rounded, color: Colors.teal, size: 30)
+                        : null,
                   ),
                   title: Text(groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
