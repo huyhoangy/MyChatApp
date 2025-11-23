@@ -8,6 +8,7 @@ class Message {
   final DateTime timestamp;
   final bool isRecalled;
   final String? imageUrl;
+  final List<dynamic> seenBy;
 
   Message({
     required this.id,
@@ -17,6 +18,7 @@ class Message {
     required this.timestamp,
     this.isRecalled = false,
     this.imageUrl,
+    this.seenBy = const [],
   });
 
   factory Message.fromFirestore(DocumentSnapshot doc) {
@@ -29,6 +31,6 @@ class Message {
       timestamp: (data['timestamp'] as Timestamp).toDate(),
       isRecalled: data['isRecalled'] ?? false,
       imageUrl: data['imageUrl'],
-    );
+        seenBy: data['seenBy'] ?? [],);
   }
 }

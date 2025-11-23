@@ -7,12 +7,16 @@ class ChatBubble extends StatelessWidget {
   final Message message;
   final bool isMe;
   final String? nickname;
+  final  bool isGroup;
+  final String chatRoomId;
 
   const ChatBubble({
     Key? key,
     required this.message,
     required this.isMe,
     this.nickname,
+    this.isGroup=false,
+    required this.chatRoomId,
   }) : super(key: key);
 
   @override
@@ -29,7 +33,17 @@ class ChatBubble extends StatelessWidget {
     }
 
     if (isMe) {
-      return Align(alignment: Alignment.centerRight, child: _buildMessageContainer(isMe: true));
+      return Align(
+          alignment: Alignment.centerRight,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildMessageContainer(isMe: true),
+              if(_isSeen())
+                _buildSeenStatus(),
+            ],
+          ),
+      );
     }
 
     return Padding(
@@ -97,6 +111,64 @@ class ChatBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+  bool _isSeen(){
+    return message.seenBy.length>1;
+  }
+  Widget _buildSeenStatus(){
+    if(!isGroup){
+      return const Padding(
+        padding: EdgeInsets.only(top: 2.0,right: 8.0),
+        child: Text(
+          'Đã xem ',
+          style: TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+    List<dynamic> viewerUids = List.from(message.seenBy);
+    viewerUids.remove(message.senderId);
+    if(viewerUids.isEmpty)
+      return const SizedBox.shrink();
+    return FutureBuilder<List<String>>(
+      future: _fetchViewerNames(viewerUids),
+      builder: (context,snapshot){
+        String text ='Đã xem';
+        if(snapshot.hasData && snapshot.data!.isNotEmpty){
+          text = 'Đã xem bởi: ${snapshot.data!.join(', ')}';
+        }
+        return Padding(
+          padding: const EdgeInsets.only(top: 2.0,right: 8.0),
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic),
+          ),
+
+        );
+      },
+    );
+  }
+  Future<List<String>> _fetchViewerNames(List<dynamic> uids) async {
+    List<String> names = [];
+    try {
+      var roomDoc = await FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomId).get();
+      Map<String, dynamic> nicknamesMap = {};
+      if (roomDoc.exists && roomDoc.data()!.containsKey('nicknames')) {
+        nicknamesMap = roomDoc.data()!['nicknames'];
+      }
+
+      for (String uid in uids) {
+        if (nicknamesMap.containsKey(uid)) {
+          names.add(nicknamesMap[uid]);
+        } else {
+          var userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          if (userDoc.exists) {
+            names.add(userDoc.data()!['displayName'] ?? 'Người dùng');
+          }
+        }
+      }
+    } catch (e) {
+    }
+    return names;
   }
 
   Widget _buildMessageContainer({required bool isMe}) {

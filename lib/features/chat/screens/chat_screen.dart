@@ -76,6 +76,18 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
+  void _markMessageAsSeen(String messageId,List<dynamic>seenBy){
+    final String currentUserUid = _auth.currentUser!.uid;
+    if(!seenBy.contains(currentUserUid)){
+      _firestore.collection('chat_rooms')
+          .doc(_chatRoomId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'seenBy':FieldValue.arrayUnion([currentUserUid]),
+      });
+    }
+  }
 
   void _showEditNameDialog(String targetUid, String currentName, String label) {
     final TextEditingController _nicknameController = TextEditingController(text: currentName);
@@ -255,6 +267,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'timestamp': timestamp,
       'isRecalled': false,
       'imageUrl': imageUrl,
+      'seenBy':[_currentUserUid],
     };
 
     try {
@@ -504,10 +517,14 @@ class _ChatScreenState extends State<ChatScreen> {
                           final message = Message.fromFirestore(doc);
 
                           final isMe = message.senderId == _currentUserUid;
+                          if(!isMe){
+                            _markMessageAsSeen(message.id,message.seenBy);
+                          }
                           String? senderNickname;
                           if (nicknames.containsKey(message.senderId)) {
                             senderNickname = nicknames[message.senderId];
                           }
+
 
                           return GestureDetector(
                             onLongPress: () {
@@ -519,6 +536,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               message: message,
                               isMe: isMe,
                               nickname: senderNickname,
+                              isGroup: widget.isGroup,
+                              chatRoomId: _chatRoomId,
                             ),
                           );
                         },
