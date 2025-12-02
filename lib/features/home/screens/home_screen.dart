@@ -12,7 +12,7 @@ class HomeScreen extends StatefulWidget {
   _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -27,6 +27,36 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState(){
     super.initState();
     _setupFCM();
+    _setUserStatus(true);
+  }
+  @override
+  void dispose(){
+    WidgetsBinding.instance.removeObserver(this);
+    _setUserStatus(false);
+    super.dispose();
+  }
+  @override
+  void  didChangeAppLifecycleState(AppLifecycleState state){
+    if(state== AppLifecycleState.resumed){
+      _setUserStatus(true);
+    }
+    else {
+      _setUserStatus(false);
+    }
+  }
+  void _setUserStatus(bool isOnline) async{
+    final user = _auth.currentUser;
+    if(user!=null){
+      var doc = await _firestore.collection('users').doc(user.uid).get();
+      bool showStatus =doc.data()?['showStatus']??true;
+      if(!showStatus){
+        isOnline =false;
+      }
+      await _firestore.collection('users').doc(user.uid).update({
+        'isOnline': isOnline,
+        'lastActive': FieldValue.serverTimestamp(), // Lưu thời gian
+      });
+    }
   }
   void _setupFCM() async{
     await _firebaseMessaging.requestPermission(

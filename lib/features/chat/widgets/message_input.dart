@@ -9,10 +9,12 @@ const CLOUDINARY_UPLOAD_PRESET = 'flutter_uploads_chatapp';
 
 class MessageInput extends StatefulWidget {
   final Function(String text, {String? imageUrl}) onSendPressed;
+  final Function(bool isTyping) onTypingStatusChanged;
 
   const MessageInput({
     Key? key,
     required this.onSendPressed,
+    required this.onTypingStatusChanged,
   }) : super(key: key);
 
   @override
@@ -76,6 +78,7 @@ class _MessageInputState extends State<MessageInput> {
 
     widget.onSendPressed(text, imageUrl: imageUrl);
     _messageController.clear();
+    widget.onTypingStatusChanged(false);
     setState(() {
       _selectedImage = null;
     });
@@ -129,6 +132,9 @@ class _MessageInputState extends State<MessageInput> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
+                  onChanged: (text){
+                    widget.onTypingStatusChanged(text.isNotEmpty);
+                  },
                   decoration: InputDecoration(
                     hintText: 'Nhập tin nhắn...',
                     border: OutlineInputBorder(

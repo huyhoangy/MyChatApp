@@ -220,9 +220,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 direction: DismissDirection.endToStart,
                 onDismissed: (direction) => _deleteChat(chatRoomId),
                 background: Container(color: Colors.red[600], alignment: Alignment.centerRight, padding: const EdgeInsets.symmetric(horizontal: 20.0), child: const Icon(Icons.delete_sweep_rounded, color: Colors.white)),
-                child: FutureBuilder<DocumentSnapshot>(
-                  future: _firestore.collection('users').doc(otherUserUid).get(),
-                  builder: (context, userSnapshot) {
+                child: StreamBuilder<DocumentSnapshot>(
+                    stream: _firestore.collection('users').doc(otherUserUid).snapshots(),
+                    builder: (context, userSnapshot) {
                     if (!userSnapshot.hasData) {
                       // Hiển thị tạm nếu đang load user nhưng đã có biệt danh
                       return ListTile(title: Text(customNickname ?? 'Đang tải...'), subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis));
@@ -234,17 +234,36 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     String nameToShow = customNickname ?? originalName; // Ưu tiên biệt danh
 
                     String placeholderInitial = nameToShow.isNotEmpty ? nameToShow[0].toUpperCase() : '?';
+                    bool isOnline = userData['isOnline'] ?? false;
                     final bool matchesSearch = _searchQuery.isEmpty || nameToShow.toLowerCase().contains(_searchQuery.toLowerCase());
                     if (!matchesSearch) return const SizedBox.shrink();
 
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-                      leading: CircleAvatar(
-                        radius: 28,
-                        backgroundColor: Colors.teal[100],
-                        backgroundImage: (userData['photoUrl'] != null && userData['photoUrl'].isNotEmpty) ? NetworkImage(userData['photoUrl']) : null,
-                        child: (userData['photoUrl'] == null || userData['photoUrl'].isEmpty) ? Text(placeholderInitial, style: TextStyle(color: Colors.teal[800], fontSize: 24, fontWeight: FontWeight.bold)) : null,
-                      ),
+                      leading: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 28,
+                            backgroundColor: Colors.teal[100],
+                            backgroundImage: (userData['photoUrl'] != null && userData['photoUrl'].isNotEmpty) ? NetworkImage(userData['photoUrl']) : null,
+                            child: (userData['photoUrl'] == null || userData['photoUrl'].isEmpty) ? Text(placeholderInitial, style: TextStyle(color: Colors.teal[800], fontSize: 24, fontWeight: FontWeight.bold)) : null,
+                          ),
+                          if(isOnline)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 3),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ) ,
                       title: Text(nameToShow, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
                       trailing: Text(time, style: const TextStyle(color: Colors.grey, fontSize: 12)),

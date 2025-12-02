@@ -32,6 +32,7 @@ class _ChatScreenState extends State<ChatScreen> {
   late String _currentUserUid;
   late String _chatRoomId;
   final ScrollController _scrollController = ScrollController();
+  bool _isTypingLocal=false;
 
   @override
   void initState() {
@@ -251,6 +252,79 @@ class _ChatScreenState extends State<ChatScreen> {
           },
         );
       },
+    );
+  }
+  void _updateTypingToFirestore(bool isTyping){
+    if(_isTypingLocal==isTyping) return;
+    _isTypingLocal=isTyping;
+    _firestore.collection('chat_rooms').doc(_chatRoomId).update({
+      'typingUsers.$_currentUserUid': isTyping,
+    });
+  }
+  Widget _buildTypingIndicator(){
+    return StreamBuilder<DocumentSnapshot>(
+        stream: _firestore.collection('chat_rooms').doc(_chatRoomId).snapshots(),
+        builder: (context,snapshot){
+          if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
+          var data =snapshot.data!.data() as Map<String,dynamic>;
+          Map<String,dynamic> typingUsers ={};
+          if(data.containsKey('typingUsers')){
+            typingUsers =data['typingUsers'];
+          }
+          Map<String, dynamic> nicknames = {};
+          if (data.containsKey('nicknames')) {
+            nicknames = data['nicknames'];
+          }
+
+          List<String> typingNames = [];
+          typingUsers.forEach((uid,isTyping){
+            if(isTyping== true &&  uid!= _currentUserUid){
+              String name ="Người dùng";
+              if(nicknames.containsKey(uid)){
+                name = nicknames[uid];
+              }
+              else{
+                if(!widget.isGroup){
+                  name = widget.receiverName;
+                  if (nicknames.containsKey(uid)) name = nicknames[uid];
+                } else {
+                  name = "Thành viên";
+                }
+              }
+              typingNames.add(name);
+            }
+          });
+          if (typingNames.isEmpty) return const SizedBox.shrink();
+          String text = typingNames.join(", ") + (typingNames.length > 1 ? " đang soạn tin..." : " đang soạn tin...");
+          return Padding(
+            padding: const EdgeInsets.only(left: 16.0,bottom: 4.0,top: 4.0),
+            child: Row(
+              children: [
+                Container(
+                  padding:const EdgeInsets.symmetric(horizontal: 10.0,vertical: 5.0),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 10,
+                        height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.teal)
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        text,
+                        style: const TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
     );
   }
 
@@ -547,10 +621,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
             ),
+            _buildTypingIndicator(),
             MessageInput(
                 onSendPressed: (text, {imageUrl}) {
                   _sendMessage(text, imageUrl: imageUrl);
-                }
+                },
+                onTypingStatusChanged:(isTyping){
+                  _updateTypingToFirestore(isTyping);
+                },
             ),
           ],
         ),

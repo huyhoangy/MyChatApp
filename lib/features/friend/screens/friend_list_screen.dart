@@ -60,19 +60,42 @@ class _FriendListScreenState extends State<FriendListScreen> {
             itemCount: friendUids.length,
             itemBuilder: (context, index) {
               String friendUid = friendUids[index];
-              return FutureBuilder<DocumentSnapshot>(
-                future: _firestore.collection('users').doc(friendUid).get(),
+
+              return StreamBuilder<DocumentSnapshot>(
+                stream: _firestore.collection('users').doc(friendUid).snapshots(), // Lắng nghe thay đổi
                 builder: (context, friendSnapshot) {
                   if (!friendSnapshot.hasData) return const ListTile(title: Text('Đang tải...'));
+
                   var friendData = friendSnapshot.data!.data() as Map<String, dynamic>;
 
+                  bool isOnline = friendData['isOnline'] ?? false;
+
                   return ListTile(
-                    leading: CircleAvatar(
-                      radius: 25,
-                      backgroundColor: Colors.teal[100],
-                      backgroundImage: (friendData['photoUrl'] != null && friendData['photoUrl'].isNotEmpty) ? NetworkImage(friendData['photoUrl']) : null,
-                      child: (friendData['photoUrl'] == null || friendData['photoUrl'].isEmpty) ? Text(friendData['displayName']?[0] ?? '?', style: TextStyle(color: Colors.teal[800])) : null,
+                    leading: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 25,
+                          backgroundColor: Colors.teal[100],
+                          backgroundImage: (friendData['photoUrl'] != null && friendData['photoUrl'].isNotEmpty) ? NetworkImage(friendData['photoUrl']) : null,
+                          child: (friendData['photoUrl'] == null || friendData['photoUrl'].isEmpty) ? Text(friendData['displayName']?[0] ?? '?', style: TextStyle(color: Colors.teal[800])) : null,
+                        ),
+                        if (isOnline)
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
+
                     title: Text(friendData['displayName'] ?? 'Người dùng'),
                     subtitle: Text(friendData['phoneNumber'] ?? 'Chưa có SĐT'),
                     onTap: () {
@@ -80,7 +103,7 @@ class _FriendListScreenState extends State<FriendListScreen> {
                         builder: (context) => ChatScreen(
                           receiverUid: friendUid,
                           receiverName: friendData['displayName'] ?? 'Người dùng',
-                          isGroup: false, // <--- Chat 1-1 từ danh bạ
+                          isGroup: false,
                         ),
                       ));
                     },
